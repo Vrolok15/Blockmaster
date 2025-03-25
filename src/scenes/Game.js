@@ -440,6 +440,8 @@ export class Game extends Scene
                             startY + (gridY + y) * effectiveCellSize + (cellSize / 2),
                             'block'
                         ).setDisplaySize(cellSize, cellSize);
+                        block.gridX = gridX + x;
+                        block.gridY = gridY + y;
                         this.placedBlocks.push(block);
                         blockCount++;
                     }
@@ -451,6 +453,9 @@ export class Game extends Scene
             
             // Update score with actual block count
             this.updateScore(blockCount);
+
+            // Check and clear filled rows and columns
+            this.checkAndClearLines();
             
             // Remove the draggable container
             container.destroy();
@@ -479,6 +484,81 @@ export class Game extends Scene
             container.x = container.originalX;
             container.y = container.originalY;
         }
+    }
+
+    checkAndClearLines() {
+        const size = this.gridProps.size;
+        let rowsCleared = 0;
+        let columnsCleared = 0;
+        
+        // Check rows
+        for (let y = 0; y < size; y++) {
+            if (this.isRowFilled(y)) {
+                this.clearRow(y);
+                rowsCleared++;
+            }
+        }
+        
+        // Check columns
+        for (let x = 0; x < size; x++) {
+            if (this.isColumnFilled(x)) {
+                this.clearColumn(x);
+                columnsCleared++;
+            }
+        }
+        
+        // Update score for cleared lines
+        const linesScore = (rowsCleared + columnsCleared) * 20;
+        if (linesScore > 0) {
+            this.updateScore(linesScore);
+        }
+        
+        // Check if grid is completely empty after clearing
+        if (this.isGridEmpty()) {
+            this.updateScore(100); // Bonus for clearing the grid
+        }
+    }
+
+    isRowFilled(y) {
+        return this.gridState[y].every(cell => cell === 1);
+    }
+
+    isColumnFilled(x) {
+        return this.gridState.every(row => row[x] === 1);
+    }
+
+    isGridEmpty() {
+        return this.gridState.every(row => row.every(cell => cell === 0));
+    }
+
+    clearRow(y) {
+        // Clear grid state
+        this.gridState[y].fill(0);
+        
+        // Remove blocks
+        this.placedBlocks = this.placedBlocks.filter(block => {
+            if (block.gridY === y) {
+                block.destroy();
+                return false;
+            }
+            return true;
+        });
+    }
+
+    clearColumn(x) {
+        // Clear grid state
+        for (let y = 0; y < this.gridProps.size; y++) {
+            this.gridState[y][x] = 0;
+        }
+        
+        // Remove blocks
+        this.placedBlocks = this.placedBlocks.filter(block => {
+            if (block.gridX === x) {
+                block.destroy();
+                return false;
+            }
+            return true;
+        });
     }
 
     canPlaceShape(shape, gridX, gridY) {
