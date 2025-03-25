@@ -7,10 +7,14 @@ export class Game extends Scene
         super('Game');
         this.gridState = Array(9).fill(null).map(() => Array(9).fill(0));
         this.placedShapes = 0;
+        this.turn = 0;
         this.currentShapes = [];
         this.placedBlocks = [];
         this.score = 0;
+        this.highScore = parseInt(localStorage.getItem('blockmaster_highscore')) || 0;
         this.lastPlacedColor = null; // Store the last placed block's color
+        this.combo = 1; // Track current combo
+        this.lastLineClearTurn = -1; // Track the turn when lines were last cleared
         this.blockColors = [
             0xff0000, // red
             0x0000ff, // blue
@@ -64,7 +68,7 @@ export class Game extends Scene
         this.cameras.main.setBackgroundColor('#000000');
         
         // Add title
-        this.add.text(512, 80, 'BLOCKMASTER', {
+        this.titleText = this.add.text(512, 80, 'BLOCKMASTER', {
             fontFamily: 'Silkscreen',
             fontSize: 48,
             color: '#ffffff',
@@ -75,8 +79,22 @@ export class Game extends Scene
             antialias: false
         }).setOrigin(0.5);
 
+        // Add high score only if it exists
+        if (this.highScore > 0) {
+            this.highScoreText = this.add.text(512, 130, `HIGH SCORE: ${this.highScore}`, {
+                fontFamily: 'Silkscreen',
+                fontSize: 32,
+                color: '#ffd700',
+                stroke: '#000000',
+                strokeThickness: 4,
+                align: 'center',
+                resolution: 1,
+                antialias: false
+            }).setOrigin(0.5);
+        }
+
         // Add score
-        this.scoreText = this.add.text(512, 130, 'SCORE: 0', {
+        this.scoreText = this.add.text(512, 170, `SCORE: ${this.score}`, {
             fontFamily: 'Silkscreen',
             fontSize: 32,
             color: '#ffffff',
@@ -170,6 +188,14 @@ export class Game extends Scene
         // Play game over sound
         this.playSound('gameover');
         
+        // Update high score if current score is higher
+        if (this.score > this.highScore) {
+            this.highScore = this.score;
+            localStorage.setItem('blockmaster_highscore', this.highScore);
+            // Update high score text
+            this.highScoreText.setText(`HIGH SCORE: ${this.highScore}`);
+        }
+        
         // Create semi-transparent black overlay
         const overlay = this.add.graphics();
         overlay.fillStyle(0x000000, 0.8);
@@ -180,20 +206,38 @@ export class Game extends Scene
             fontFamily: 'Silkscreen',
             fontSize: 64,
             color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 8,
             align: 'center',
             resolution: 1,
             antialias: false
         }).setOrigin(0.5);
 
         // Add final score
-        const finalScore = this.add.text(512, 380, `FINAL SCORE: ${this.score}`, {
-            fontFamily: 'Silkscreen',
-            fontSize: 32,
-            color: '#ffffff',
-            align: 'center',
-            resolution: 1,
-            antialias: false
-        }).setOrigin(0.5);
+        if (this.highScore > 0 && this.score > this.highScore) {
+            const finalScore = this.add.text(512, 380, `NEW HIGH SCORE: ${this.score}`, {
+                fontFamily: 'Silkscreen',
+                fontSize: 32,
+                color: '#ffd700',
+                stroke: '#000000',
+                strokeThickness: 4,
+                align: 'center',
+                resolution: 1,
+                antialias: false
+            }).setOrigin(0.5);
+        }
+        else {
+            const finalScore = this.add.text(512, 380, `FINAL SCORE: ${this.score}`, {
+                fontFamily: 'Silkscreen',
+                fontSize: 32,
+                color: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 4,
+                align: 'center',
+                resolution: 1,
+                antialias: false
+            }).setOrigin(0.5);
+        }
 
         // Add restart button
         const restartButton = this.add.text(512, 460, 'RESTART', {
@@ -227,8 +271,10 @@ export class Game extends Scene
         // Clear the grid state
         this.gridState = Array(9).fill(null).map(() => Array(9).fill(0));
         
-        // Reset score
+        // Reset score and combo
         this.score = 0;
+        this.combo = 1;
+        this.lastLineClearTurn = -1;
         this.scoreText.setText('SCORE: 0');
         
         // Clear placed blocks
@@ -241,11 +287,12 @@ export class Game extends Scene
         
         // Reset placed shapes counter
         this.placedShapes = 0;
+        this.turn = 0;
         
-        // Remove only game over overlay and blocks, preserve grid and score
+        // Remove only game over overlay and blocks, preserve grid, score, and title
         this.children.list
             .filter(child => 
-                (child.type === 'Text' && child !== this.scoreText) || 
+                (child.type === 'Text' && child !== this.scoreText && child !== this.titleText && child !== this.highScoreText) || 
                 (child.type === 'Graphics' && !child.isGrid))
             .forEach(child => child.destroy());
         
@@ -269,8 +316,14 @@ export class Game extends Scene
         });
     }
 
-    updateScore(blockCount) {
-        this.score += blockCount;
+    updateScore(blockCount, combo) {
+        // Calculate points with combo multiplier
+        const basePoints = blockCount;
+        const comboMultiplier = combo;
+        const totalPoints = basePoints * comboMultiplier;
+
+        // Update score
+        this.score += totalPoints;
         this.scoreText.setText(`SCORE: ${this.score}`);
     }
 
@@ -397,7 +450,27 @@ export class Game extends Scene
             // 1 piece shape 
             [
                 [1]
-            ]    
+            ],
+            // corner shape
+            [
+                [1, 1],
+                [1, 0]
+            ],
+            // corner shape right
+            [
+                [1, 1],
+                [0, 1]
+            ],
+            // corner shape down
+            [
+                [1, 0],
+                [1, 1]
+            ],
+            // corner shape mirror
+            [
+                [0, 1],
+                [1, 1]
+            ]
         ];
 
         // Function to get random shapes
@@ -413,8 +486,36 @@ export class Game extends Scene
             return selectedShapes;
         };
 
-        // Get 3 random shapes
-        const selectedShapes = getRandomShapes(3);
+        // Function to check if any shape can be placed
+        const canPlaceAnyShape = (shapes) => {
+            return shapes.some(shape => {
+                // Try every possible position on the grid
+                for (let y = 0; y < this.gridProps.size; y++) {
+                    for (let x = 0; x < this.gridProps.size; x++) {
+                        if (this.canPlaceShape(shape, x, y)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            });
+        };
+
+        // Get shapes and verify at least one can be placed
+        let selectedShapes;
+        let attempts = 0;
+        const maxAttempts = 10; // Prevent infinite loop
+
+        do {
+            selectedShapes = getRandomShapes(3);
+            attempts++;
+        } while (!canPlaceAnyShape(selectedShapes) && attempts < maxAttempts);
+
+        // If we couldn't find valid shapes after max attempts, show game over
+        if (attempts >= maxAttempts) {
+            this.showGameOver();
+            return;
+        }
 
         // Calculate total width of selected shapes
         const totalShapesWidth = selectedShapes.reduce((total, shape) => {
@@ -476,11 +577,6 @@ export class Game extends Scene
             
             currentX += shapeWidth + shapeSpacing;
         });
-
-        // After generating shapes, check for game over
-        if (this.checkGameOver()) {
-            this.showGameOver();
-        }
     }
 
     tryPlaceShape(container) {
@@ -520,8 +616,10 @@ export class Game extends Scene
             // Place shape in grid state
             this.placeShape(container.shapeData, gridX, gridY);
             
+            this.turn++;
+            
             // Update score with actual block count
-            this.updateScore(blockCount);
+            this.updateScore(blockCount, 1);
 
             // Play shape placement sound
             this.playSound('placed');
@@ -540,7 +638,7 @@ export class Game extends Scene
             
             // Increment placed shapes counter
             this.placedShapes++;
-            
+
             // Check if all shapes are placed
             if (this.placedShapes === 3) {
                 // Generate new shapes after a short delay
@@ -563,6 +661,13 @@ export class Game extends Scene
         let rowsCleared = 0;
         let columnsCleared = 0;
         
+        // Update combo based on last line clear turn
+        if (this.lastLineClearTurn === this.turn - 1) {
+            this.combo++;
+        } else {
+            this.combo = 1;
+        }
+        
         // Check rows
         for (let y = 0; y < size; y++) {
             if (this.isRowFilled(y)) {
@@ -581,16 +686,18 @@ export class Game extends Scene
         
         // Update score for cleared lines
         const linesScore = (rowsCleared + columnsCleared) * 20;
+
         if (linesScore > 0) {
+            this.lastLineClearTurn = this.turn;
             this.time.delayedCall(300, () => {
-                this.updateScore(linesScore);
+                this.updateScore(linesScore, this.combo);
                 
                 // Check if grid is completely empty after clearing
                 if (this.isGridEmpty()) {
                     this.showGridClearBonus();
                 }
             });
-        }
+        } 
     }
 
     isRowFilled(y) {
@@ -615,11 +722,17 @@ export class Game extends Scene
         // Play row clear sound
         this.playSound('cleared');
         
+        // Update combo text
+        let points = '+20';
+        if (this.combo > 1) {
+            points = `+${20 * this.combo} (${this.combo}x COMBO!)`; 
+        }
+        
         // Create single points text for the row
         const pointsText = this.add.text(
             this.gridProps.startX + this.gridProps.width / 2,
             this.gridProps.startY + y * this.gridProps.cellSize + this.gridProps.cellSize / 2,
-            '+20',
+            points,
             {
                 fontFamily: 'Silkscreen',
                 fontSize: 48,
@@ -687,11 +800,17 @@ export class Game extends Scene
         // Play column clear sound
         this.playSound('cleared');
         
+        // Update combo text
+        let points = '+20';
+        if (this.combo > 1) {
+            points = `+${20 * this.combo} (${this.combo}x COMBO!)`; 
+        }
+        
         // Create single points text for the column
         const pointsText = this.add.text(
-            this.gridProps.startX + x * this.gridProps.cellSize + this.gridProps.cellSize / 2,
-            this.gridProps.startY + this.gridProps.height / 2,
-            '+20',
+            this.gridProps.startX + this.gridProps.width / 2,
+            this.gridProps.startY + y * this.gridProps.cellSize + this.gridProps.cellSize / 2,
+            points,
             {
                 fontFamily: 'Silkscreen',
                 fontSize: 48,
@@ -809,7 +928,7 @@ export class Game extends Scene
             ease: 'Power2',
             onComplete: () => {
                 bonusText.destroy();
-                this.updateScore(100);
+                this.updateScore(100, 1);
             }
         });
     }
