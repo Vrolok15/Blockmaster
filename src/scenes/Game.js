@@ -192,8 +192,22 @@ export class Game extends Scene
         if (this.score > this.highScore) {
             this.highScore = this.score;
             localStorage.setItem('blockmaster_highscore', this.highScore);
-            // Update high score text
-            this.highScoreText.setText(`HIGH SCORE: ${this.highScore}`);
+            
+            // Create or update high score text
+            if (this.highScoreText) {
+                this.highScoreText.setText(`HIGH SCORE: ${this.highScore}`);
+            } else {
+                this.highScoreText = this.add.text(512, 130, `HIGH SCORE: ${this.highScore}`, {
+                    fontFamily: 'Silkscreen',
+                    fontSize: 32,
+                    color: '#ffd700',
+                    stroke: '#000000',
+                    strokeThickness: 4,
+                    align: 'center',
+                    resolution: 1,
+                    antialias: false
+                }).setOrigin(0.5);
+            }
         }
         
         // Create semi-transparent black overlay
