@@ -20,6 +20,7 @@ export class Game extends Scene
             0x800080, // purple
             0xffa500  // orange
         ];
+        this.sounds = {}; // Store sound objects
     }
 
     preload ()
@@ -29,10 +30,29 @@ export class Game extends Scene
         this.load.image('background', 'bg.png');
         this.load.image('logo', 'logo.png');
         this.load.image('block', 'block.png');
+
+        // Audio
+        // played when a row or column is cleared
+        this.load.audio('cleared', 'cleared.wav');
+        // played when the game is over
+        this.load.audio('gameover', 'gameover.wav');
+        // played when a shape is placed
+        this.load.audio('placed', 'placed.wav');
+        // played when the grid is emptied
+        this.load.audio('empty', 'empty.wav');
+        // played when points are scored
+        this.load.audio('points', 'points.wav');
     }
 
     create ()
     {
+        // Initialize sounds
+        this.sounds.cleared = this.sound.add('cleared');
+        this.sounds.gameover = this.sound.add('gameover');
+        this.sounds.placed = this.sound.add('placed');
+        this.sounds.empty = this.sound.add('empty');
+        this.sounds.points = this.sound.add('points');
+
         this.createUI();
         this.createGrid();
         this.setupDragEvents();
@@ -140,7 +160,16 @@ export class Game extends Scene
         });
     }
 
+    playSound(soundKey) {
+        if (this.sounds[soundKey]) {
+            this.sounds[soundKey].play();
+        }
+    }
+
     showGameOver() {
+        // Play game over sound
+        this.playSound('gameover');
+        
         // Create semi-transparent black overlay
         const overlay = this.add.graphics();
         overlay.fillStyle(0x000000, 0.8);
@@ -494,6 +523,9 @@ export class Game extends Scene
             // Update score with actual block count
             this.updateScore(blockCount);
 
+            // Play shape placement sound
+            this.playSound('placed');
+
             // Check and clear filled rows and columns
             this.checkAndClearLines();
             
@@ -580,6 +612,9 @@ export class Game extends Scene
         // Get blocks to remove
         const blocksToRemove = this.placedBlocks.filter(block => block.gridY === y);
         
+        // Play row clear sound
+        this.playSound('cleared');
+        
         // Create single points text for the row
         const pointsText = this.add.text(
             this.gridProps.startX + this.gridProps.width / 2,
@@ -606,7 +641,7 @@ export class Game extends Scene
         pointsText.setTint(this.lastPlacedColor);
         
         // Wait 500ms then animate removal
-        this.time.delayedCall(300, () => {
+        this.time.delayedCall(500, () => {
             // Animate all blocks at once
             this.tweens.add({
                 targets: blocksToRemove,
@@ -648,6 +683,9 @@ export class Game extends Scene
         
         // Get blocks to remove
         const blocksToRemove = this.placedBlocks.filter(block => block.gridX === x);
+        
+        // Play column clear sound
+        this.playSound('cleared');
         
         // Create single points text for the column
         const pointsText = this.add.text(
@@ -741,6 +779,9 @@ export class Game extends Scene
     }
 
     showGridClearBonus() {
+        // Play grid clear sound
+        this.playSound('empty');
+        
         // Add bonus text
         const bonusText = this.add.text(
             this.gridProps.startX + this.gridProps.width / 2,
