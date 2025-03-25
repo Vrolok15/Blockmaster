@@ -9,6 +9,7 @@ export class Game extends Scene
         this.placedShapes = 0;
         this.currentShapes = [];
         this.placedBlocks = [];
+        this.score = 0;
     }
 
     preload ()
@@ -22,6 +23,13 @@ export class Game extends Scene
 
     create ()
     {
+        this.createUI();
+        this.createGrid();
+        this.setupDragEvents();
+        this.generateNewShapes();
+    }
+
+    createUI() {
         // Set black background
         this.cameras.main.setBackgroundColor('#000000');
         
@@ -48,7 +56,9 @@ export class Game extends Scene
             resolution: 1,
             antialias: false
         }).setOrigin(0.5);
+    }
 
+    createGrid() {
         // Create 9x9 grid
         const gridSize = 9;
         const cellSize = 35; // Base cell size
@@ -104,7 +114,11 @@ export class Game extends Scene
             graphics.strokePath();
         }
 
-        // Set up drag events
+        // Mark this graphics object as grid lines
+        graphics.isGrid = true;
+    }
+
+    setupDragEvents() {
         this.input.on('dragstart', (pointer, gameObject) => {
             gameObject.setDepth(1);
         });
@@ -118,8 +132,111 @@ export class Game extends Scene
             gameObject.setDepth(0);
             this.tryPlaceShape(gameObject);
         });
+    }
 
+    showGameOver() {
+        // Create semi-transparent black overlay
+        const overlay = this.add.graphics();
+        overlay.fillStyle(0x000000, 0.8);
+        overlay.fillRect(0, 0, 1024, 768);
+
+        // Add Game Over text
+        const gameOverText = this.add.text(512, 300, 'GAME OVER', {
+            fontFamily: 'Silkscreen',
+            fontSize: 64,
+            color: '#ffffff',
+            align: 'center',
+            resolution: 1,
+            antialias: false
+        }).setOrigin(0.5);
+
+        // Add final score
+        const finalScore = this.add.text(512, 380, `FINAL SCORE: ${this.score}`, {
+            fontFamily: 'Silkscreen',
+            fontSize: 32,
+            color: '#ffffff',
+            align: 'center',
+            resolution: 1,
+            antialias: false
+        }).setOrigin(0.5);
+
+        // Add restart button
+        const restartButton = this.add.text(512, 460, 'RESTART', {
+            fontFamily: 'Silkscreen',
+            fontSize: 32,
+            color: '#ffffff',
+            backgroundColor: '#4a4a4a',
+            padding: { x: 20, y: 10 },
+            align: 'center',
+            resolution: 1,
+            antialias: false
+        }).setOrigin(0.5);
+
+        restartButton.setInteractive({ useHandCursor: true });
+        
+        // Hover effects
+        restartButton.on('pointerover', () => {
+            restartButton.setBackgroundColor('#666666');
+        });
+        
+        restartButton.on('pointerout', () => {
+            restartButton.setBackgroundColor('#4a4a4a');
+        });
+        
+        restartButton.on('pointerdown', () => {
+            this.restartGame();
+        });
+    }
+
+    restartGame() {
+        // Clear the grid state
+        this.gridState = Array(9).fill(null).map(() => Array(9).fill(0));
+        
+        // Reset score
+        this.score = 0;
+        this.scoreText.setText('SCORE: 0');
+        
+        // Clear placed blocks
+        this.placedBlocks.forEach(block => block.destroy());
+        this.placedBlocks = [];
+        
+        // Clear current shapes
+        this.currentShapes.forEach(container => container.destroy());
+        this.currentShapes = [];
+        
+        // Reset placed shapes counter
+        this.placedShapes = 0;
+        
+        // Remove only game over overlay and blocks, preserve grid and score
+        this.children.list
+            .filter(child => 
+                (child.type === 'Text' && child !== this.scoreText) || 
+                (child.type === 'Graphics' && !child.isGrid))
+            .forEach(child => child.destroy());
+        
+        // Generate new shapes
         this.generateNewShapes();
+    }
+
+    checkGameOver() {
+        // Check if any current shape can be placed anywhere on the grid
+        return !this.currentShapes.some(container => {
+            const shape = container.shapeData;
+            // Try every possible position on the grid
+            for (let y = 0; y < this.gridProps.size; y++) {
+                for (let x = 0; x < this.gridProps.size; x++) {
+                    if (this.canPlaceShape(shape, x, y)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
+    }
+
+    updateScore(blockCount) {
+        this.score += blockCount;
+        this.scoreText.setText(`SCORE: ${this.score}`);
     }
 
     generateNewShapes() {
@@ -295,6 +412,11 @@ export class Game extends Scene
             
             currentX += shapeWidth + shapeSpacing;
         });
+
+        // After generating shapes, check for game over
+        if (this.checkGameOver()) {
+            this.showGameOver();
+        }
     }
 
     tryPlaceShape(container) {
@@ -306,6 +428,9 @@ export class Game extends Scene
         
         // Check if position is valid
         if (this.canPlaceShape(container.shapeData, gridX, gridY)) {
+            // Count blocks in the shape
+            let blockCount = 0;
+            
             // Create static blocks at the grid position
             container.shapeData.forEach((row, y) => {
                 row.forEach((cell, x) => {
@@ -316,12 +441,16 @@ export class Game extends Scene
                             'block'
                         ).setDisplaySize(cellSize, cellSize);
                         this.placedBlocks.push(block);
+                        blockCount++;
                     }
                 });
             });
             
             // Place shape in grid state
             this.placeShape(container.shapeData, gridX, gridY);
+            
+            // Update score with actual block count
+            this.updateScore(blockCount);
             
             // Remove the draggable container
             container.destroy();
@@ -341,6 +470,9 @@ export class Game extends Scene
                 this.time.delayedCall(300, () => {
                     this.generateNewShapes();
                 });
+            } else if (this.checkGameOver()) {
+                // Check for game over after each placement
+                this.showGameOver();
             }
         } else {
             // Invalid placement, return to original position
