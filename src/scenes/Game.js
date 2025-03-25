@@ -61,6 +61,37 @@ export class Game extends Scene
         this.createGrid();
         this.setupDragEvents();
         this.generateNewShapes();
+
+        // Initialize drag handling
+        this.input.on('dragstart', (pointer, gameObject) => {
+            if (gameObject.isDraggable) {
+                this.dragStartPos = {
+                    x: gameObject.x,
+                    y: gameObject.y
+                };
+            }
+        });
+
+        this.input.on('drag', (pointer, gameObject, dragX, dragY) => {
+            if (gameObject.isDraggable) {
+                // Ensure we have valid camera and world point
+                if (this.cameras && this.cameras.main) {
+                    const worldPoint = this.cameras.main.getWorldPoint(dragX, dragY);
+                    gameObject.x = worldPoint.x;
+                    gameObject.y = worldPoint.y;
+                }
+            }
+        });
+
+        this.input.on('dragend', (pointer, gameObject, dragX, dragY) => {
+            if (gameObject.isDraggable) {
+                // Ensure we have valid camera and world point
+                if (this.cameras && this.cameras.main) {
+                    const worldPoint = this.cameras.main.getWorldPoint(dragX, dragY);
+                    this.handleShapeDrop(gameObject, worldPoint.x, worldPoint.y);
+                }
+            }
+        });
     }
 
     createUI() {
@@ -803,81 +834,26 @@ export class Game extends Scene
     }
 
     clearColumn(x) {
-        // Clear grid state
+        // Move all blocks above the cleared column down
         for (let y = 0; y < this.gridProps.size; y++) {
-            this.gridState[y][x] = 0;
-        }
-        
-        // Get blocks to remove
-        const blocksToRemove = this.placedBlocks.filter(block => block.gridX === x);
-        
-        // Play column clear sound
-        this.playSound('cleared');
-        
-        // Update combo text
-        let points = '+20';
-        if (this.combo > 1) {
-            points = `+${20 * this.combo} (${this.combo}x COMBO!)`; 
-        }
-        
-        // Create single points text for the column
-        const pointsText = this.add.text(
-            this.gridProps.startX + this.gridProps.width / 2,
-            this.gridProps.startY + y * this.gridProps.cellSize + this.gridProps.cellSize / 2,
-            points,
-            {
-                fontFamily: 'Silkscreen',
-                fontSize: 48,
-                color: '#ffffff',
-                stroke: '#000000',
-                strokeThickness: 6,
-                align: 'center',
-                resolution: 1,
-                antialias: false
+            if (this.gridState[y][x] !== null) {
+                // Move block down
+                const block = this.gridState[y][x];
+                this.gridState[y][x] = null;
+                
+                // Find the lowest empty position in this column
+                let lowestY = y;
+                while (lowestY < this.gridProps.size - 1 && this.gridState[lowestY + 1][x] === null) {
+                    lowestY++;
+                }
+                
+                // Update block position
+                if (lowestY !== y) {
+                    this.gridState[lowestY][x] = block;
+                    block.gridY = lowestY;
+                }
             }
-        ).setOrigin(0.5);
-        
-        // First change color of all blocks
-        blocksToRemove.forEach(block => {
-            block.setTint(this.lastPlacedColor);
-        });
-        
-        // Set text color
-        pointsText.setTint(this.lastPlacedColor);
-        
-        // Wait 500ms then animate removal
-        this.time.delayedCall(500, () => {
-            // Animate all blocks at once
-            this.tweens.add({
-                targets: blocksToRemove,
-                alpha: 0,
-                scaleX: 0,
-                scaleY: 0,
-                y: '-=50', // Move up while fading
-                duration: 800,
-                ease: 'Power2',
-                onComplete: () => {
-                    blocksToRemove.forEach(block => block.destroy());
-                }
-            });
-            
-            // Animate points text
-            this.tweens.add({
-                targets: pointsText,
-                alpha: 0,
-                scaleX: 1.2,
-                scaleY: 1.2,
-                y: pointsText.y - 50,
-                duration: 800,
-                ease: 'Power2',
-                onComplete: () => {
-                    pointsText.destroy();
-                }
-            });
-        });
-        
-        // Update placedBlocks array after animation
-        this.placedBlocks = this.placedBlocks.filter(block => block.gridX !== x);
+        }
     }
 
     canPlaceShape(shape, gridX, gridY) {
