@@ -62,17 +62,13 @@ export class Game extends Scene
         // Create 9x9 grid
         const gridSize = 9;
         const cellSize = 35; // Base cell size
-        const blockSpacing = 4; // Space between blocks
-        const effectiveCellSize = cellSize + blockSpacing; // Total space per cell including spacing
-        const gridWidth = gridSize * effectiveCellSize - blockSpacing; // Subtract last spacing
-        const gridHeight = gridSize * effectiveCellSize - blockSpacing;
+        const gridWidth = gridSize * cellSize; // No spacing between cells
+        const gridHeight = gridSize * cellSize;
         
         // Store grid properties for later use
         this.gridProps = {
             size: gridSize,
             cellSize,
-            blockSpacing,
-            effectiveCellSize,
             width: gridWidth,
             height: gridHeight,
             startX: Math.floor((1024 - gridWidth) / 2),
@@ -98,7 +94,7 @@ export class Game extends Scene
 
         // Draw inner vertical lines
         for (let i = 1; i < gridSize; i++) {
-            const x = startX + (i * effectiveCellSize);
+            const x = startX + (i * cellSize);
             graphics.beginPath();
             graphics.moveTo(x, startY);
             graphics.lineTo(x, endY);
@@ -107,7 +103,7 @@ export class Game extends Scene
 
         // Draw inner horizontal lines
         for (let i = 1; i < gridSize; i++) {
-            const y = startY + (i * effectiveCellSize);
+            const y = startY + (i * cellSize);
             graphics.beginPath();
             graphics.moveTo(startX, y);
             graphics.lineTo(endX, y);
@@ -360,7 +356,7 @@ export class Game extends Scene
 
         // Calculate total width of selected shapes
         const totalShapesWidth = selectedShapes.reduce((total, shape) => {
-            return total + (shape[0].length * this.gridProps.effectiveCellSize - this.gridProps.blockSpacing);
+            return total + (shape[0].length * this.gridProps.cellSize);
         }, 0);
         
         // Add spacing between shapes
@@ -375,8 +371,8 @@ export class Game extends Scene
         let currentX = shapeStartX;
 
         selectedShapes.forEach((shape) => {
-            const shapeWidth = shape[0].length * this.gridProps.effectiveCellSize - this.gridProps.blockSpacing;
-            const shapeHeight = shape.length * this.gridProps.effectiveCellSize - this.gridProps.blockSpacing;
+            const shapeWidth = shape[0].length * this.gridProps.cellSize;
+            const shapeHeight = shape.length * this.gridProps.cellSize;
             
             // Calculate Y position to align bottom row
             const shapeStartY = bottomY - shapeHeight;
@@ -390,8 +386,8 @@ export class Game extends Scene
                 row.forEach((cell, x) => {
                     if (cell === 1) {
                         const block = this.add.image(
-                            x * this.gridProps.effectiveCellSize + (this.gridProps.cellSize / 2),
-                            y * this.gridProps.effectiveCellSize + (this.gridProps.cellSize / 2),
+                            x * this.gridProps.cellSize + (this.gridProps.cellSize / 2),
+                            y * this.gridProps.cellSize + (this.gridProps.cellSize / 2),
                             'block'
                         ).setDisplaySize(this.gridProps.cellSize, this.gridProps.cellSize);
                         container.add(block);
@@ -420,11 +416,11 @@ export class Game extends Scene
     }
 
     tryPlaceShape(container) {
-        const { startX, startY, effectiveCellSize, size, cellSize } = this.gridProps;
+        const { startX, startY, cellSize, size } = this.gridProps;
         
         // Calculate grid position
-        const gridX = Math.round((container.x - startX) / effectiveCellSize);
-        const gridY = Math.round((container.y - startY) / effectiveCellSize);
+        const gridX = Math.round((container.x - startX) / cellSize);
+        const gridY = Math.round((container.y - startY) / cellSize);
         
         // Check if position is valid
         if (this.canPlaceShape(container.shapeData, gridX, gridY)) {
@@ -436,8 +432,8 @@ export class Game extends Scene
                 row.forEach((cell, x) => {
                     if (cell === 1) {
                         const block = this.add.image(
-                            startX + (gridX + x) * effectiveCellSize + (cellSize / 2),
-                            startY + (gridY + y) * effectiveCellSize + (cellSize / 2),
+                            startX + (gridX + x) * cellSize + (cellSize / 2),
+                            startY + (gridY + y) * cellSize + (cellSize / 2),
                             'block'
                         ).setDisplaySize(cellSize, cellSize);
                         block.gridX = gridX + x;
@@ -510,12 +506,14 @@ export class Game extends Scene
         // Update score for cleared lines
         const linesScore = (rowsCleared + columnsCleared) * 20;
         if (linesScore > 0) {
-            this.updateScore(linesScore);
-        }
-        
-        // Check if grid is completely empty after clearing
-        if (this.isGridEmpty()) {
-            this.updateScore(100); // Bonus for clearing the grid
+            this.time.delayedCall(300, () => {
+                this.updateScore(linesScore);
+                
+                // Check if grid is completely empty after clearing
+                if (this.isGridEmpty()) {
+                    this.showGridClearBonus();
+                }
+            });
         }
     }
 
@@ -535,14 +533,25 @@ export class Game extends Scene
         // Clear grid state
         this.gridState[y].fill(0);
         
-        // Remove blocks
-        this.placedBlocks = this.placedBlocks.filter(block => {
-            if (block.gridY === y) {
-                block.destroy();
-                return false;
-            }
-            return true;
+        // Animate and remove blocks
+        const blocksToRemove = this.placedBlocks.filter(block => block.gridY === y);
+        
+        blocksToRemove.forEach(block => {
+            this.tweens.add({
+                targets: block,
+                alpha: 0,
+                scaleX: 0,
+                scaleY: 0,
+                duration: 300,
+                ease: 'Power2',
+                onComplete: () => {
+                    block.destroy();
+                }
+            });
         });
+        
+        // Update placedBlocks array after animation
+        this.placedBlocks = this.placedBlocks.filter(block => block.gridY !== y);
     }
 
     clearColumn(x) {
@@ -551,14 +560,25 @@ export class Game extends Scene
             this.gridState[y][x] = 0;
         }
         
-        // Remove blocks
-        this.placedBlocks = this.placedBlocks.filter(block => {
-            if (block.gridX === x) {
-                block.destroy();
-                return false;
-            }
-            return true;
+        // Animate and remove blocks
+        const blocksToRemove = this.placedBlocks.filter(block => block.gridX === x);
+        
+        blocksToRemove.forEach(block => {
+            this.tweens.add({
+                targets: block,
+                alpha: 0,
+                scaleX: 0,
+                scaleY: 0,
+                duration: 300,
+                ease: 'Power2',
+                onComplete: () => {
+                    block.destroy();
+                }
+            });
         });
+        
+        // Update placedBlocks array after animation
+        this.placedBlocks = this.placedBlocks.filter(block => block.gridX !== x);
     }
 
     canPlaceShape(shape, gridX, gridY) {
@@ -590,5 +610,38 @@ export class Game extends Scene
                 }
             }
         }
+    }
+
+    showGridClearBonus() {
+        // Add bonus text
+        const bonusText = this.add.text(
+            this.gridProps.startX + this.gridProps.width / 2,
+            this.gridProps.startY + this.gridProps.height / 2,
+            'GRID CLEAR!\n+100',
+            {
+                fontFamily: 'Silkscreen',
+                fontSize: 48,
+                color: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 6,
+                align: 'center',
+                resolution: 1,
+                antialias: false
+            }
+        ).setOrigin(0.5);
+        
+        // Animate the text
+        this.tweens.add({
+            targets: bonusText,
+            alpha: 0,
+            scaleX: 1.2,
+            scaleY: 1.2,
+            duration: 800,
+            ease: 'Power2',
+            onComplete: () => {
+                bonusText.destroy();
+                this.updateScore(100);
+            }
+        });
     }
 }
