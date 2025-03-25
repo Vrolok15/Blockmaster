@@ -10,6 +10,16 @@ export class Game extends Scene
         this.currentShapes = [];
         this.placedBlocks = [];
         this.score = 0;
+        this.lastPlacedColor = null; // Store the last placed block's color
+        this.blockColors = [
+            0xff0000, // red
+            0x0000ff, // blue
+            0x00ff00, // green
+            0xffd700, // gold
+            0x00ffff, // cyan
+            0x800080, // purple
+            0xffa500  // orange
+        ];
     }
 
     preload ()
@@ -247,6 +257,16 @@ export class Game extends Scene
 
         // Create Tetris-like shapes
         const allShapes = [
+            // short I shape
+            [
+                [1, 1, 1]
+            ],
+            // short I shape standing
+            [
+                [1],
+                [1],
+                [1]
+            ],
             // I shape
             [
                 [1, 1, 1, 1]
@@ -335,7 +355,20 @@ export class Game extends Scene
                 [1],
                 [1],
                 [1]
-            ]
+            ],
+            // 2 piece shape
+            [
+                [1, 1]
+            ],
+            // 2 piece shape standing
+            [
+                [1],
+                [1]
+            ],
+            // 1 piece shape 
+            [
+                [1]
+            ]    
         ];
 
         // Function to get random shapes
@@ -381,6 +414,9 @@ export class Game extends Scene
             const container = this.add.container(currentX, shapeStartY);
             this.currentShapes.push(container);
             
+            // Get a random color for this shape
+            const shapeColor = this.blockColors[Math.floor(Math.random() * this.blockColors.length)];
+            
             // Add blocks to the container
             shape.forEach((row, y) => {
                 row.forEach((cell, x) => {
@@ -390,13 +426,16 @@ export class Game extends Scene
                             y * this.gridProps.cellSize + (this.gridProps.cellSize / 2),
                             'block'
                         ).setDisplaySize(this.gridProps.cellSize, this.gridProps.cellSize);
+                        block.setTint(shapeColor);
+                        block.color = shapeColor; // Store the color
                         container.add(block);
                     }
                 });
             });
 
-            // Store the shape data in the container for later use
+            // Store the shape data and color in the container for later use
             container.shapeData = shape;
+            container.color = shapeColor;
             
             // Make the container interactive and draggable
             container.setInteractive(new Phaser.Geom.Rectangle(0, 0, shapeWidth, shapeHeight), Phaser.Geom.Rectangle.Contains);
@@ -427,6 +466,9 @@ export class Game extends Scene
             // Count blocks in the shape
             let blockCount = 0;
             
+            // Store the color of the last placed block
+            this.lastPlacedColor = container.color;
+            
             // Create static blocks at the grid position
             container.shapeData.forEach((row, y) => {
                 row.forEach((cell, x) => {
@@ -436,6 +478,8 @@ export class Game extends Scene
                             startY + (gridY + y) * cellSize + (cellSize / 2),
                             'block'
                         ).setDisplaySize(cellSize, cellSize);
+                        block.setTint(container.color); // Apply the shape's color
+                        block.color = container.color; // Store the color
                         block.gridX = gridX + x;
                         block.gridY = gridY + y;
                         this.placedBlocks.push(block);
@@ -533,19 +577,61 @@ export class Game extends Scene
         // Clear grid state
         this.gridState[y].fill(0);
         
-        // Animate and remove blocks
+        // Get blocks to remove
         const blocksToRemove = this.placedBlocks.filter(block => block.gridY === y);
         
+        // Create single points text for the row
+        const pointsText = this.add.text(
+            this.gridProps.startX + this.gridProps.width / 2,
+            this.gridProps.startY + y * this.gridProps.cellSize + this.gridProps.cellSize / 2,
+            '+20',
+            {
+                fontFamily: 'Silkscreen',
+                fontSize: 48,
+                color: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 6,
+                align: 'center',
+                resolution: 1,
+                antialias: false
+            }
+        ).setOrigin(0.5);
+        
+        // First change color of all blocks
         blocksToRemove.forEach(block => {
+            block.setTint(this.lastPlacedColor);
+        });
+        
+        // Set text color
+        pointsText.setTint(this.lastPlacedColor);
+        
+        // Wait 500ms then animate removal
+        this.time.delayedCall(300, () => {
+            // Animate all blocks at once
             this.tweens.add({
-                targets: block,
+                targets: blocksToRemove,
                 alpha: 0,
                 scaleX: 0,
                 scaleY: 0,
-                duration: 300,
+                y: '-=50', // Move up while fading
+                duration: 800,
                 ease: 'Power2',
                 onComplete: () => {
-                    block.destroy();
+                    blocksToRemove.forEach(block => block.destroy());
+                }
+            });
+            
+            // Animate points text
+            this.tweens.add({
+                targets: pointsText,
+                alpha: 0,
+                scaleX: 1.2,
+                scaleY: 1.2,
+                y: pointsText.y - 50,
+                duration: 800,
+                ease: 'Power2',
+                onComplete: () => {
+                    pointsText.destroy();
                 }
             });
         });
@@ -560,19 +646,61 @@ export class Game extends Scene
             this.gridState[y][x] = 0;
         }
         
-        // Animate and remove blocks
+        // Get blocks to remove
         const blocksToRemove = this.placedBlocks.filter(block => block.gridX === x);
         
+        // Create single points text for the column
+        const pointsText = this.add.text(
+            this.gridProps.startX + x * this.gridProps.cellSize + this.gridProps.cellSize / 2,
+            this.gridProps.startY + this.gridProps.height / 2,
+            '+20',
+            {
+                fontFamily: 'Silkscreen',
+                fontSize: 48,
+                color: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 6,
+                align: 'center',
+                resolution: 1,
+                antialias: false
+            }
+        ).setOrigin(0.5);
+        
+        // First change color of all blocks
         blocksToRemove.forEach(block => {
+            block.setTint(this.lastPlacedColor);
+        });
+        
+        // Set text color
+        pointsText.setTint(this.lastPlacedColor);
+        
+        // Wait 500ms then animate removal
+        this.time.delayedCall(500, () => {
+            // Animate all blocks at once
             this.tweens.add({
-                targets: block,
+                targets: blocksToRemove,
                 alpha: 0,
                 scaleX: 0,
                 scaleY: 0,
-                duration: 300,
+                y: '-=50', // Move up while fading
+                duration: 800,
                 ease: 'Power2',
                 onComplete: () => {
-                    block.destroy();
+                    blocksToRemove.forEach(block => block.destroy());
+                }
+            });
+            
+            // Animate points text
+            this.tweens.add({
+                targets: pointsText,
+                alpha: 0,
+                scaleX: 1.2,
+                scaleY: 1.2,
+                y: pointsText.y - 50,
+                duration: 800,
+                ease: 'Power2',
+                onComplete: () => {
+                    pointsText.destroy();
                 }
             });
         });
